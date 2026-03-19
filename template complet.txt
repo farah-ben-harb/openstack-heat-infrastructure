@@ -1,0 +1,289 @@
+heat_template_version: 2018-08-31
+
+description: >
+  MEGA STACK - 2 networks (frontend/backend), 1 router, 1 security group,
+  4 instances (2 Ubuntu + 2 CirrOS), 2 Cinder volumes (10GB) attached only to Ubuntu,
+  and 4 floating IPs.
+
+parameters:
+  external_network:
+    type: string
+    default: "provider"
+
+  ubuntu_image:
+    type: string
+    default: "Ubuntu 22.04 Jammy"
+
+  cirros_image:
+    type: string
+    default: "cirros"
+
+  ubuntu_flavor:
+    type: string
+    default: "ubuntu-jammy.small"
+
+  cirros_flavor:
+    type: string
+    default: "m1.nano"
+
+  key_name:
+    type: string
+    default: "jammy-key"
+
+resources:
+  # -------------------------
+  # NETWORKS
+  # -------------------------
+  frontend_net:
+    type: OS::Neutron::Net
+    properties:
+      name: heat-frontend-net
+
+  frontend_subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      name: heat-frontend-subnet
+      network_id: { get_resource: frontend_net }
+      cidr: 10.10.0.0/24
+      ip_version: 4
+      dns_nameservers: [8.8.8.8, 8.8.4.4]
+
+  backend_net:
+    type: OS::Neutron::Net
+    properties:
+      name: heat-backend-net
+
+  backend_subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      name: heat-backend-subnet
+      network_id: { get_resource: backend_net }
+      cidr: 10.20.0.0/24
+      ip_version: 4
+      dns_nameservers: [8.8.8.8, 8.8.4.4]
+
+  # -------------------------
+  # ROUTER + INTERFACES
+  # -------------------------
+  router:
+    type: OS::Neutron::Router
+    properties:
+      name: heat-router
+      external_gateway_info:
+        network: { get_param: external_network }
+
+  router_int_frontend:
+    type: OS::Neutron::RouterInterface
+    properties:
+      router_id: { get_resource: router }
+      subnet_id: { get_resource: frontend_subnet }
+
+  router_int_backend:
+    type: OS::Neutron::RouterInterface
+    properties:
+      router_id: { get_resource: router }
+      subnet_id: { get_resource: backend_subnet }
+
+  # -------------------------
+  # SECURITY GROUP (SSH + WEB + MYSQL + ICMP)
+  # -------------------------
+  sg_all:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      name: heat-sg-all
+      description: Allow SSH/HTTP/HTTPS/MySQL and ICMP
+      rules:
+        - protocol: tcp
+          direction: ingress
+          port_range_min: 22
+          port_range_max: 22
+          remote_ip_prefix: 0.0.0.0/0
+        - protocol: tcp
+          direction: ingress
+          port_range_min: 80
+          port_range_max: 80
+          remote_ip_prefix: 0.0.0.0/0
+        - protocol: tcp
+          direction: ingress
+          port_range_min: 443
+          port_range_max: 443
+          remote_ip_prefix: 0.0.0.0/0
+        - protocol: tcp
+          direction: ingress
+          port_range_min: 3306
+          port_range_max: 3306
+          remote_ip_prefix: 0.0.0.0/0
+        - protocol: icmp
+          direction: ingress
+          remote_ip_prefix: 0.0.0.0/0
+
+  # -------------------------
+  # CLOUD-INIT (Ubuntu user/pass)
+  # -------------------------
+  cloud_config:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        users:
+          - name: ubuntu
+            sudo: ALL=(ALL) NOPASSWD:ALL
+            shell: /bin/bash
+            lock_passwd: false
+            passwd: $6$rounds=4096$z2BNwXrDKuH/A5ku$RU0koZfsUy4Y0cRGa5Jh5yERWv6B3IZ2T.A744abBgcgGbWK.u3iYvY5h1IuN6A80G7zT3U9x3tSOh3/Hmwxv0
+        ssh_pwauth: true
+
+  # -------------------------
+  # VOLUMES (10 GB each) - Ubuntu only
+  # -------------------------
+  vol_u1:
+    type: OS::Cinder::Volume
+    properties:
+      name: heat-vol-ubuntu-frontend
+      size: 10
+
+  vol_u2:
+    type: OS::Cinder::Volume
+    properties:
+      name: heat-vol-ubuntu-backend
+      size: 10
+
+  # -------------------------
+  # UBUNTU 1 (FRONTEND)
+  # -------------------------
+  port_u1:
+    type: OS::Neutron::Port
+    depends_on: router_int_frontend
+    properties:
+      network_id: { get_resource: frontend_net }
+      security_groups: [{ get_resource: sg_all }]
+
+  ubuntu1:
+    type: OS::Nova::Server
+    properties:
+      name: heat-ubuntu-frontend
+      image: { get_param: ubuntu_image }
+      flavor: { get_param: ubuntu_flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: port_u1 }
+      user_data_format: RAW
+      user_data: { get_resource: cloud_config }
+
+  vol_att_u1:
+    type: OS::Cinder::VolumeAttachment
+    properties:
+      volume_id: { get_resource: vol_u1 }
+      instance_uuid: { get_resource: ubuntu1 }
+
+  fip_u1:
+    type: OS::Neutron::FloatingIP
+    depends_on: router_int_frontend
+    properties:
+      floating_network: { get_param: external_network }
+      port_id: { get_resource: port_u1 }
+
+  # -------------------------
+  # UBUNTU 2 (BACKEND)
+  # -------------------------
+  port_u2:
+    type: OS::Neutron::Port
+    depends_on: router_int_backend
+    properties:
+      network_id: { get_resource: backend_net }
+      security_groups: [{ get_resource: sg_all }]
+
+  ubuntu2:
+    type: OS::Nova::Server
+    properties:
+      name: heat-ubuntu-backend
+      image: { get_param: ubuntu_image }
+      flavor: { get_param: ubuntu_flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: port_u2 }
+      user_data_format: RAW
+      user_data: { get_resource: cloud_config }
+
+  vol_att_u2:
+    type: OS::Cinder::VolumeAttachment
+    properties:
+      volume_id: { get_resource: vol_u2 }
+      instance_uuid: { get_resource: ubuntu2 }
+
+  fip_u2:
+    type: OS::Neutron::FloatingIP
+    depends_on: router_int_backend
+    properties:
+      floating_network: { get_param: external_network }
+      port_id: { get_resource: port_u2 }
+
+  # -------------------------
+  # CIRROS 1 (FRONTEND)
+  # -------------------------
+  port_c1:
+    type: OS::Neutron::Port
+    depends_on: router_int_frontend
+    properties:
+      network_id: { get_resource: frontend_net }
+      security_groups: [{ get_resource: sg_all }]
+
+  cirros1:
+    type: OS::Nova::Server
+    properties:
+      name: heat-cirros-frontend
+      image: { get_param: cirros_image }
+      flavor: { get_param: cirros_flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: port_c1 }
+
+  fip_c1:
+    type: OS::Neutron::FloatingIP
+    depends_on: router_int_frontend
+    properties:
+      floating_network: { get_param: external_network }
+      port_id: { get_resource: port_c1 }
+
+  # -------------------------
+  # CIRROS 2 (BACKEND)
+  # -------------------------
+  port_c2:
+    type: OS::Neutron::Port
+    depends_on: router_int_backend
+    properties:
+      network_id: { get_resource: backend_net }
+      security_groups: [{ get_resource: sg_all }]
+
+  cirros2:
+    type: OS::Nova::Server
+    properties:
+      name: heat-cirros-backend
+      image: { get_param: cirros_image }
+      flavor: { get_param: cirros_flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: port_c2 }
+
+  fip_c2:
+    type: OS::Neutron::FloatingIP
+    depends_on: router_int_backend
+    properties:
+      floating_network: { get_param: external_network }
+      port_id: { get_resource: port_c2 }
+
+outputs:
+  ubuntu1_ip:
+    description: Floating IP of Ubuntu Frontend
+    value: { get_attr: [fip_u1, floating_ip_address] }
+
+  ubuntu2_ip:
+    description: Floating IP of Ubuntu Backend
+    value: { get_attr: [fip_u2, floating_ip_address] }
+
+  cirros1_ip:
+    description: Floating IP of CirrOS Frontend
+    value: { get_attr: [fip_c1, floating_ip_address] }
+
+  cirros2_ip:
+    description: Floating IP of CirrOS Backend
+    value: { get_attr: [fip_c2, floating_ip_address] }
