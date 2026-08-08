@@ -1,33 +1,56 @@
 # OpenStack Heat Infrastructure Deployment
 
-## Project Overview
-This project provides an automated infrastructure deployment on **OpenStack** using a **Heat template (HOT)**.
+Infrastructure-as-code deployment for OpenStack using a Heat template (HOT).
 
-It provisions a complete cloud environment including:
-- Multi-network architecture (frontend & backend)
+## Overview
+
+This project provisions a complete cloud environment including:
+
+- Multi-network architecture for frontend and backend traffic
 - Router and network interfaces
 - Security groups
-- Virtual machines (Ubuntu & CirrOS)
-- Block storage (Cinder volumes)
+- Virtual machines with Ubuntu and CirrOS
+- Block storage through Cinder volumes
 - Floating IPs for external access
 
-The infrastructure is fully reproducible and designed for cloud and DevOps environments.
+The goal is to show reproducible cloud infrastructure definition using native OpenStack tooling.
 
----
+## Architecture
 
-## Architecture Overview
-The deployed infrastructure includes:
+- 2 networks:
+  - Frontend network `10.10.0.0/24`
+  - Backend network `10.20.0.0/24`
+- 1 router connecting both networks to the external network
+- 4 instances:
+  - 2 Ubuntu instances
+  - 2 CirrOS instances
+- Security groups controlling access by role
+- Cinder volumes attached where persistent storage is needed
 
-- 2 Networks:
-  - Frontend Network (10.10.0.0/24)
-  - Backend Network (10.20.0.0/24)
+## Repository Structure
 
-- 1 Router:
-  - Connects both networks to external network
+- `template.txt` Heat template source
+- `.gitattributes` repository metadata
 
-- 4 Instances:
-  - 2 Ubuntu instances (frontend & backend)
-  - 2 CirrOS instances (frontend & backend)
+## Usage
+
+- Review the Heat template before deployment
+- Validate the parameters for your OpenStack environment
+- Launch the stack from Horizon or the OpenStack CLI
+- Verify networking, floating IPs, and instance readiness after deployment
+
+## Branching and Commits
+
+- Use branches such as `feat/<area>`, `fix/<area>`, `docs/<area>`, or `infra/<area>`
+- Keep commits focused on one infrastructure concern
+- Prefer Conventional Commits such as `feat(openstack): add backend security group`
+- Avoid vague commit messages like `update`, `final`, or `test`
+
+## Contributing
+
+- Keep environment-specific values out of the template where possible
+- Document any change that affects the network or security model
+- Avoid committing generated state or credentials
 
 - 2 Cinder Volumes:
   - 10GB each
