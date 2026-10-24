@@ -102,5 +102,9 @@ The template allows customization via parameters:
 ### 1. Upload Template
 ```bash
 openstack stack create \
-  -t template.yaml \
+  -t template.txt \
   my-stack
+
+## Access and security
+
+Set key_name to an existing OpenStack key pair before deployment. The proposed template disables password-based SSH; use the key pair for access. Review the broad ingress rules and floating IP exposure for your environment before applying this lab template. A previously committed password hash remains in Git history and must be treated as exposed if it was used on any VM.
