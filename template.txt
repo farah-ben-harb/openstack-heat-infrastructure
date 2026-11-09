@@ -128,9 +128,8 @@ resources:
           - name: ubuntu
             sudo: ALL=(ALL) NOPASSWD:ALL
             shell: /bin/bash
-            lock_passwd: false
-            passwd: $6$rounds=4096$z2BNwXrDKuH/A5ku$RU0koZfsUy4Y0cRGa5Jh5yERWv6B3IZ2T.A744abBgcgGbWK.u3iYvY5h1IuN6A80G7zT3U9x3tSOh3/Hmwxv0
-        ssh_pwauth: true
+            lock_passwd: true
+        ssh_pwauth: false
 
   # -------------------------
   # VOLUMES (10 GB each) - Ubuntu only
