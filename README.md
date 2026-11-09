@@ -1,110 +1,101 @@
-# OpenStack Heat Infrastructure Deployment
+# OpenStack Heat Infrastructure
 
-Infrastructure-as-code deployment for OpenStack using a Heat template (HOT).
+Heat Orchestration Template (HOT) for a small private-cloud lab. It creates a
+two-network environment with compute, block storage, security groups, and
+floating IPs using native OpenStack resources.
 
-## Overview
+## Current status
 
-This project provisions a complete cloud environment including:
-
-- Multi-network architecture for frontend and backend traffic
-- Router and network interfaces
-- Security groups
-- Virtual machines with Ubuntu and CirrOS
-- Block storage through Cinder volumes
-- Floating IPs for external access
-
-The goal is to show reproducible cloud infrastructure definition using native OpenStack tooling.
+The template parses as YAML and the repository documents its inputs and security
+assumptions. No live OpenStack stack was created during the November 2026 audit,
+so image names, flavors, quotas, and external-network access must still be
+validated against the target cloud.
 
 ## Architecture
 
-- 2 networks:
-  - Frontend network `10.10.0.0/24`
-  - Backend network `10.20.0.0/24`
-- 1 router connecting both networks to the external network
-- 4 instances:
-  - 2 Ubuntu instances
-  - 2 CirrOS instances
-- Security groups controlling access by role
-- Cinder volumes attached where persistent storage is needed
+```mermaid
+flowchart LR
+    Internet[External network] --> Router[Neutron router]
+    Router --> Frontend[Frontend 10.10.0.0/24]
+    Router --> Backend[Backend 10.20.0.0/24]
+    Frontend --> U1[Ubuntu 1]
+    Frontend --> C1[CirrOS 1]
+    Backend --> U2[Ubuntu 2]
+    Backend --> C2[CirrOS 2]
+    U1 --> V1[Cinder volume]
+    U2 --> V2[Cinder volume]
+```
 
-## Repository Structure
+The template defines:
 
-- `template.txt` Heat template source
-- `.gitattributes` repository metadata
+- two Neutron networks and subnets;
+- one router attached to an external network;
+- two Ubuntu and two CirrOS instances;
+- two 10 GB Cinder volumes attached to the Ubuntu instances;
+- one floating IP per instance;
+- a shared security group for SSH, HTTP, HTTPS, MySQL, and ICMP.
 
-## Usage
+## Repository
 
-- Review the Heat template before deployment
-- Validate the parameters for your OpenStack environment
-- Launch the stack from Horizon or the OpenStack CLI
-- Verify networking, floating IPs, and instance readiness after deployment
+- [`template.txt`](template.txt): Heat template;
+- `.gitattributes`: repository text settings.
 
-## Branching and Commits
+## Prerequisites
 
-- Use branches such as `feat/<area>`, `fix/<area>`, `docs/<area>`, or `infra/<area>`
-- Keep commits focused on one infrastructure concern
-- Prefer Conventional Commits such as `feat(openstack): add backend security group`
-- Avoid vague commit messages like `update`, `final`, or `test`
+- an OpenStack project with Heat, Nova, Neutron, and Cinder;
+- OpenStack CLI credentials loaded in the shell;
+- an existing SSH key pair;
+- images, flavors, and an external network matching the selected parameters.
 
-## Contributing
+## Deploy
 
-- Keep environment-specific values out of the template where possible
-- Document any change that affects the network or security model
-- Avoid committing generated state or credentials
+Review the parameters before creating a stack:
 
-- 2 Cinder Volumes:
-  - 10GB each
-  - Attached to Ubuntu instances only
-
-- 4 Floating IPs:
-  - One for each instance
-
-- Security Group:
-  - Allows SSH (22), HTTP (80), HTTPS (443), MySQL (3306), ICMP
-
----
-
-## Features
-- Full infrastructure provisioning using **Heat (IaC)**
-- Multi-tier network architecture (frontend/backend)
-- Automated VM deployment (Ubuntu & CirrOS)
-- Persistent storage with Cinder volumes
-- External access via floating IPs
-- Secure access configuration (SSH, Web, DB)
-- Cloud-init configuration for Ubuntu instances
-
----
-
-## Technologies Used
-- **OpenStack** – Cloud infrastructure  
-- **Heat (HOT)** – Infrastructure as Code  
-- **Neutron** – Networking  
-- **Nova** – Compute instances  
-- **Cinder** – Block storage  
-- **Cloud-init** – Instance initialization  
-
----
-
-## Template Parameters
-The template allows customization via parameters:
-
-- `external_network` – Public network (default: provider)
-- `ubuntu_image` – Ubuntu image name
-- `cirros_image` – CirrOS image name
-- `ubuntu_flavor` – Flavor for Ubuntu instances
-- `cirros_flavor` – Flavor for CirrOS instances
-- `key_name` – SSH key pair
-
----
-
-## Deployment
-
-### 1. Upload Template
 ```bash
 openstack stack create \
-  -t template.txt \
+  --template template.txt \
+  --parameter key_name=my-existing-key \
   my-stack
+```
 
-## Access and security
+Inspect the stack and its outputs:
 
-Set key_name to an existing OpenStack key pair before deployment. The proposed template disables password-based SSH; use the key pair for access. Review the broad ingress rules and floating IP exposure for your environment before applying this lab template. A previously committed password hash remains in Git history and must be treated as exposed if it was used on any VM.
+```bash
+openstack stack show my-stack
+openstack stack output list my-stack
+```
+
+Delete the lab stack when it is no longer needed:
+
+```bash
+openstack stack delete --yes --wait my-stack
+```
+
+## Security notes
+
+Password-based SSH is disabled; instances require the supplied OpenStack key
+pair. The lab template assigns floating IPs and currently permits several ports
+from `0.0.0.0/0`, including MySQL. Restrict these rules to trusted CIDRs and
+remove unneeded ports before using the template outside an isolated lab.
+
+A password hash existed in earlier Git history. Removing it from the current
+template does not revoke credentials on previously created VMs. Review or rebuild
+those instances if that historical value was ever deployed.
+
+## Validation
+
+Static YAML parsing:
+
+```bash
+python -c "import pathlib, yaml; yaml.safe_load(pathlib.Path('template.txt').read_text())"
+```
+
+When connected to the target cloud, also run Heat validation:
+
+```bash
+openstack orchestration template validate \
+  --template template.txt \
+  --parameter key_name=my-existing-key
+```
+
+OpenStack-side validation remains environment dependent.
