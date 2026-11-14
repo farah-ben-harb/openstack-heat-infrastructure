@@ -33,7 +33,7 @@ The template defines:
 - two Ubuntu and two CirrOS instances;
 - two 10 GB Cinder volumes attached to the Ubuntu instances;
 - one floating IP per instance;
-- a shared security group for SSH, HTTP, HTTPS, MySQL, and ICMP.
+- a shared security group for restricted administration and HTTP/HTTPS traffic.
 
 ## Repository
 
@@ -55,6 +55,7 @@ Review the parameters before creating a stack:
 openstack stack create \
   --template template.txt \
   --parameter key_name=my-existing-key \
+  --parameter admin_cidr=203.0.113.10/32 \
   my-stack
 ```
 
@@ -74,9 +75,10 @@ openstack stack delete --yes --wait my-stack
 ## Security notes
 
 Password-based SSH is disabled; instances require the supplied OpenStack key
-pair. The lab template assigns floating IPs and currently permits several ports
-from `0.0.0.0/0`, including MySQL. Restrict these rules to trusted CIDRs and
-remove unneeded ports before using the template outside an isolated lab.
+pair. The lab template assigns floating IPs. HTTP/HTTPS remain public by design
+for the lab, while SSH and ICMP require the explicit `admin_cidr` parameter.
+MySQL is not opened by the security group; keep databases on private networks
+and add a narrowly scoped rule only for a verified use case.
 
 A password hash existed in earlier Git history. Removing it from the current
 template does not revoke credentials on previously created VMs. Review or rebuild
